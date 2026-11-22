@@ -1,0 +1,25 @@
+[project]
+name = "rag-langchain-vecdb"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Abhilash Palit", email = "abhilashpalit80@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "langchain>=1.5.2",
+    "langchain-anthropic>=1.7.12",
+    "langchain-core>=1.8.4",
+    "langchain-google-genai>=4.5.2",
+    "langchain-openai>=1.8.5",
+    "langgraph>=1.2.24",
+    "python-dotenv>=1.2.4",
+]
+
+[project.scripts]
+rag-langchain-vecdb = "rag_langchain_vecdb:main"
+
+[build-system]
+requires = ["uv_build>=0.13.9,<0.14.0"]
+build-backend = "uv_build"
