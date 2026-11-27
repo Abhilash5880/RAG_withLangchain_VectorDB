@@ -32,9 +32,7 @@ In a production RAG architecture, **LangChain handles the data ingestion and bas
 | **Agentic / Self-Correcting RAG** | **LangGraph** (`StateGraph`, `Nodes`, `Conditional Edges`) | Turns retrieval into a decision loop:<br>
 
 <br>1. **Router Node:** Decides whether the query even needs a vector DB search or can be answered directly.<br>
-
 <br>2. **Grader Node:** Inspects the retrieved chunks to check if they actually answer the question.<br>
-
 <br>3. **Conditional Edge (Loop):** If the chunks are irrelevant, routes backward to a **Query Rewrite Node** to rephrase the search and retry—only moving to the **Generate Answer Node** once grounded context is confirmed. |
 
 In short: right now in `document_loaders.py`, you are building the **LangChain** foundation (turning raw files into clean `Document` objects). Later in the course, you will wrap those LangChain retrievers inside **LangGraph** nodes so your RAG system can grade its own search results, rewrite bad queries, and loop until it finds the right context.
@@ -110,3 +108,95 @@ When the course reaches the Chroma lesson, install it into your `.venv` with `uv
 
 1) Bad Chunking: If the text is split into chunks that are too small or too large, the model may not have enough context to generate accurate answers. For example, if a chunk contains only a single sentence, the model may not understand the broader context of the document.
 ![alt text](image-9.png)
+
+![alt text](image-10.png)
+
+![alt text](image-11.png)
+
+![alt text](image-12.png)
+
+###
+
+**BM25** (short for **Best Matching 25**) is a classic, high-performing **lexical (keyword-based) ranking algorithm** used in information retrieval and search engines. Rather than turning text into dense semantic vectors like an embedding model does, BM25 scores documents based on exact word matches, how often a term appears, and how rare that term is across your corpus.
+
+---
+
+## What is BM25? How it works? How is it useful for RAG models?
+
+Given a user query $Q = \{q_1, q_2, \dots, q_n\}$ and a document (or chunk) $D$, BM25 calculates a relevance score by combining three core signals:
+
+1. **Term Frequency (TF) with Saturation ($k_1$):**
+* The more times a query word appears in a chunk, the more relevant that chunk likely is—*up to a point*.
+* Unlike raw TF (or classic TF-IDF), BM25 applies **diminishing returns** controlled by parameter $k_1$ (typically `1.2` to `2.0`). Mentioning a keyword 20 times doesn't make a chunk 10× better than mentioning it 3 times; it prevents keyword stuffing and long-document bias.
+
+
+2. **Inverse Document Frequency (IDF):**
+* Common words (like `"the"`, `"model"`, or `"system"`) carry low weight because they show up everywhere.
+* Rare, specific terms (like `"WinError 32"`, `"HNSW"`, `"k_1"`, or a specific class name or error code) get a high boost when matched.
+
+
+3. **Document Length Normalization ($b$):**
+* Parameter $b$ (typically `0.75`) compares a chunk's length against the average chunk length across the corpus (`avgdl`).
+* A single match inside a short, focused chunk counts for more than a single match buried inside a massive chunk.
+
+
+
+A standard formulation of the BM25 score for document $D$ and query $Q$ is:
+
+$$\text{score}(D, Q) = \sum_{i=1}^{n} \text{IDF}(q_i) \cdot \frac{f(q_i, D) \cdot (k_1 + 1)}{f(q_i, D) + k_1 \cdot \left(1 - b + b \cdot \frac{\vert{}D\vert{}}{\text{avgdl}}\right)}$$
+
+where $f(q_i, D)$ is the frequency of term $q_i$ in document $D$, $\vert{}D\vert{}$ is the document's length, and $\text{avgdl}$ is the average document length across the collection.
+
+---
+
+### Why BM25 Is Useful in RAG Models
+
+Pure vector search (dense embeddings + Chroma) excels at **semantic/conceptual matching**—for example, matching *"How do I stop Chroma from locking temp files on Windows?"* to a chunk about file handles even without exact word overlap. However, dense embeddings have blind spots that BM25 covers well:
+
+* **Exact identifiers, error codes, and technical terms:** Embeddings can blur together similar-sounding APIs, model names, versions, flags, or error codes (e.g., `WinError 32` vs. `WinError 5`, or `gemini-embedding-001` vs. another model name). BM25 nails exact token matches.
+* **No embedding API calls or latency for indexing:** BM25 builds an inverted index locally from tokens—meaning zero embedding quota/rate-limit usage and instant indexing when experimenting with chunk sizes on large PDFs.
+* **Strong baseline & domain shift resilience:** Because it doesn't rely on neural representations trained on general internet text, BM25 stays reliable on niche acronyms, internal IDs, or specialized jargon.
+
+---
+
+### Where BM25 Fits in Production RAG: Hybrid Search
+
+In production RAG systems, BM25 rarely replaces vector search—instead, they are paired in **Hybrid Search**:
+
+1. **Parallel Retrieval:** Run a **BM25 retriever** (keyword/lexical) and a **vector retriever** (semantic, e.g., Chroma) on the same chunks.
+2. **Rank Fusion (e.g., Reciprocal Rank Fusion / RRF):** Merge and re-rank the two candidate lists so chunks that rank high in *either* or *both* rise to the top.
+3. **Optional Reranking:** Pass the fused top-$N$ chunks to a cross-encoder reranker before feeding the final context into your LLM prompt.
+
+![alt text](image-13.png)
+
+![alt text](image-14.png)
+
+![alt text](image-15.png)
+
+![alt text](image-16.png)
+
+```python
+# create vector retriever
+vector_retriiver = vectorstore.as_retriever(
+    search_kwargs={"k": 5}, #return top 5
+)
+print("Vector retriever created.")
+
+# create BM25 retriever
+bm25_retriever = BM25Retriever.from_documents(
+    documents,
+    k=5,  # return top 5
+)
+print("BM25 retriever created.")
+
+# combine with ensembleRetriever object
+ensemble_retriever = BM25Retriever.combine_retrievers(
+    retrievers=[vector_retriiver, bm25_retriever],  
+    weights=[0.5, 0.5],  # equal weights for both retrievers
+)
+print('Hybrid retriever ready')
+```
+
+![alt text](image-17.png)
+
+![alt text](image-18.png)

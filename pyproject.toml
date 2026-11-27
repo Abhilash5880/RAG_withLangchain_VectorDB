@@ -17,8 +17,10 @@ dependencies = [
     "langchain-google-genai>=4.5.2",
     "langchain-openai>=1.8.5",
     "langgraph>=1.2.24",
+    "ollama>=0.6.3",
     "pypdf>=7.1.1",
     "python-dotenv>=1.2.4",
+    "rank-bm25>=0.2.2",
 ]
 
 [project.scripts]
